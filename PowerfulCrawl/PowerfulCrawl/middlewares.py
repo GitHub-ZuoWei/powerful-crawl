@@ -7,6 +7,18 @@
 
 from scrapy import signals
 
+import time  # 导入时间模块
+from logging import getLogger
+from selenium import webdriver
+from selenium.webdriver import Chrome
+from selenium.webdriver import ChromeOptions
+from fake_useragent import UserAgent  # 随机 UserAgent
+from scrapy.http import HtmlResponse  # 导入html响应模块
+from selenium.webdriver.common.by import By  # 导入By模块
+from selenium.webdriver.support.wait import WebDriverWait  # 导入等待模块
+from selenium.webdriver.support import expected_conditions as EC  # 导入预期条件模块
+from selenium.common.exceptions import TimeoutException, NoSuchElementException  # 异常模块
+from scrapy.utils.project import get_project_settings
 
 class PowerfulcrawlSpiderMiddleware(object):
     # Not all methods need to be defined. If a method is not defined,
@@ -79,6 +91,31 @@ class PowerfulcrawlDownloaderMiddleware(object):
         # - or raise IgnoreRequest: process_exception() methods of
         #   installed downloader middleware will be called
         return None
+        # # 打开URL对应的页面
+        # self.driver.get(response.url)
+        # try:
+        #     # 设置显式等待,最长等待10秒
+        #     # wait = WebDriverWait(spider.driver, 10)
+        #     # #等待评论列表容器加载完成
+        #     # wait.until(EC.presence_of_element_located(
+        #     #     (By.XPATH,"//i[@class='bui-icon icon-refresh']")))
+        #
+        #     # 使用js的scrollTo方法实现将页面向下滚动到中间
+        #     self.driver.execute_script("window.scrollTo(0,0);")
+        #     self.driver.execute_script('window.scrollTo(0, document.body.scrollHeight/2)')
+        #     for i in range(3):
+        #         time.sleep(1)
+        #         # 使用js的scrollTo方法将页面滚动到最底端
+        #         self.driver.execute_script('window.scrollTo(0, document.body.scrollHeight)')
+        #
+        #     # 获取加载完成的页面源代码
+        #     origin_code = self.driver.page_source
+        #     # 将源代码构造成为一个Response对象，并返回。
+        #     return HtmlResponse(url=response.url, encoding='utf8', body=origin_code, request=response)
+        # except TimeoutException:  # 超时
+        #     print("响应超时")
+        # except NoSuchElementException:  # 无此元素
+        #     print("Xpath错误或者没有此元素")
 
     def process_response(self, request, response, spider):
         # Called with the response returned from the downloader.
