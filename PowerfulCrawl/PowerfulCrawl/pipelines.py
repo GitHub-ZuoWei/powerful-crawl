@@ -49,10 +49,9 @@ class PowerfulCrawlPipeline(object):
         """
         爬虫一旦关闭，就会实现这个方法，关闭数据库连接
         """
-        print('-------------------------------------------------------')
-        print(spider.crawler.stats.get_stats())
-        scrapy_crawl_stats = spider.crawler.stats.get_stats()
-        self.sql_util.insert('UPDATE `collect_task_detail` SET finish_time="%s",num=%s,status=%s where id="%s"' % (
+        # print(spider.crawler.stats.get_stats())
+        # scrapy_crawl_stats = spider.crawler.stats.get_stats()
+        self.sql_util.update('UPDATE `collect_task_detail` SET finish_time="%s",num=%s,status=%s where id="%s"' % (
             current_time(), self.insert_number, 1, self.task_record_id))
         self.client.close()
 

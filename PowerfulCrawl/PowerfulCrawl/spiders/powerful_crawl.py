@@ -6,7 +6,8 @@ import json
 import requests
 
 from scrapy import signals
-
+from PIL import Image  # 识别图片文件格式
+from PIL import UnidentifiedImageError  # 识别图片格式异常
 from minio import Minio  # 图片服务
 
 from lxml import etree
@@ -22,6 +23,8 @@ from selenium.common.exceptions import *  # 异常模块
 from scrapy.utils.project import get_project_settings
 from selenium.webdriver.common.keys import Keys  # 导入键盘模块
 from selenium.webdriver.common.action_chains import ActionChains  # 导入键盘模块
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+
 # 忽略 禁用SSL 警告
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 # 导入 Mysql
@@ -96,7 +99,7 @@ class PowerfulCrawlSpider(Spider):
         self.option.add_experimental_option('useAutomationExtension', False)
         self.option.add_argument("--disable-blink-features=AutomationControlled")
 
-        # 不加载图片,加快访问速度
+        # 不加载图片
         # self.option.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
         # 加载去广告插件 ADBLOCK_PLUS
         self.option.add_extension(self.settings.get("ADBLOCK_PLUS_PATH"))
@@ -113,13 +116,19 @@ class PowerfulCrawlSpider(Spider):
         # self.display = Display(visible=0, size=(800, 800))
         # self.display.start()
 
+        # 修改页面加载策略
+        desired_capabilities = DesiredCapabilities.CHROME
+        # 注释这两行会导致最后输出结果的延迟，即等待页面加载完成再输
+        desired_capabilities["pageLoadStrategy"] = "none"
+
         # self.driver = Chrome(options=self.option, executable_path=self.settings.get('CHROME_DRIVER_PATH'))
         self.driver = Chrome(chrome_options=self.option, executable_path=self.settings.get('CHROME_DRIVER_PATH'))
         # 浏览器窗口大小
         # self.driver.set_window_size(width=1920, height=1080)
         # self.driver.maximize_window()
         # 设置模拟浏览器最长等待时间
-        self.driver.set_page_load_timeout(36)
+        self.driver.set_page_load_timeout(20)
+        self.driver.set_script_timeout(20)
         # 跳过检测  chrome88以上这个参数不起作用....
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
@@ -163,10 +172,19 @@ class PowerfulCrawlSpider(Spider):
 
         # 查询任务详情
         task_detail = self.sql_util.fetch_one("select * from collect_task where id = '" + self.task_id + "'")
-        # 本任务采集页数
-        collect_page_num = int(task_detail['coll_pages'])
-        # 采集任务类型  增量采集 incrm 、全量采集 all
-        collect_type = task_detail['type']
+        # 增量数量
+        increment_collect_page_num = int(task_detail['coll_pages'])
+        # 全量数量
+        first_coll_page_num = int(task_detail['first_coll_pages'])
+
+        # 采集任务类型  增量采集 1 、全量采集 0
+        collect_type = task_detail['exec_flag']
+        if collect_type == 0:
+            collect_page_num = first_coll_page_num
+            # 第一次为全量任务  之后改为增量任务采集
+            self.sql_util.update('UPDATE `collect_task` SET exec_flag=%s where id="%s"' % (1, self.task_id))
+        else:
+            collect_page_num = increment_collect_page_num
 
         # 根据任务ID查询模板规则
         template_detail = self.sql_util.fetch_one("SELECT * FROM `collect_template` WHERE id = '"
@@ -239,9 +257,10 @@ class PowerfulCrawlSpider(Spider):
         # news_detail_pubTime_rule = self.news_detail_rule['pubTime']
         # news_detail_content_rule = self.news_detail_rule['content']
         # news_detail_source_rule = self.news_detail_rule['source']
-
+        self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight/2,behavior: "smooth"})')
+        time.sleep(1)
         self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
-        time.sleep(2)
+        time.sleep(1)
 
         # 获取加载完成的页面源代码
         origin_code = self.driver.page_source
@@ -280,8 +299,8 @@ class PowerfulCrawlSpider(Spider):
         # 新闻详情页文本
         new_content_text = html.xpath('string(.)').strip()
         # 下载新闻图片
-        news_content_html, standard_img_url_url = self.download_news_img(html=html, response=response,
-                                                                         news_content_html=news_content_html)
+        news_content_html, remote_img_url, local_img_url = self.download_news_img(html=html, response=response,
+                                                                                  news_content_html=news_content_html)
 
         news_item = PowerfulCrawlItem()
         news_item['task_record_id'] = self.task_record_id
@@ -291,7 +310,8 @@ class PowerfulCrawlSpider(Spider):
         news_item['news_publish_time'] = str(news_publish_time) if str(news_publish_time) else None
         news_item['new_content_text'] = new_content_text
         news_item['news_content_html'] = news_content_html
-        news_item['standard_img_url_url'] = standard_img_url_url
+        news_item['remote_img_url'] = remote_img_url
+        news_item['local_img_url'] = local_img_url
         news_item['web_url'] = response.url
         news_item['insert_time'] = current_time()
         yield news_item
@@ -327,22 +347,22 @@ class PowerfulCrawlSpider(Spider):
             if click_num == 0:
                 result = list_page_extractor(self.driver.page_source, news_list_rule, self.domain_url)
                 for news_url in result:
-                    print(news_url['url'])
+                    # print(news_url['url'])
                     all_news_detail_url.append(news_url['url'])
                 continue
             # 解析列表其他项
             try:
                 wait = WebDriverWait(self.driver, 10)
                 wait.until(EC.presence_of_element_located((By.XPATH, news_list_next_button)))
-                self.driver.find_element_by_xpath(news_list_next_button).click()
-            except:
+            except TimeoutException:
                 continue
-
+            self.driver.find_element_by_xpath(news_list_next_button).click()
             result = list_page_extractor(self.driver.page_source, news_list_rule, self.domain_url)
             for news_url in result:
-                print(news_url['url'])
+                # print(news_url['url'])
                 all_news_detail_url.append(news_url['url'])
-
+        print(len(all_news_detail_url))
+        print(len(set(all_news_detail_url)))
         for news_detail_url in all_news_detail_url:
             yield Request(url=news_detail_url, callback=self.parse)
 
@@ -360,13 +380,11 @@ class PowerfulCrawlSpider(Spider):
         self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
         # 定义初始时间戳（秒）
         t1 = int(time.time())
-        # 重试次数
-        retry_num = 0
         # 翻页次数
         page_num = 0
         while True:
             if page_num >= click_num:
-                print("pagenum: " + str(page_num))
+                self.logger.info("page_num: " + str(page_num))
                 return True
             # 获取当前时间戳（秒）
             t2 = int(time.time())
@@ -377,34 +395,33 @@ class PowerfulCrawlSpider(Spider):
                     scroll_retry_times = 0
                     self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
                     # 等待加载更多按钮
+
                     wait = WebDriverWait(self.driver, 5)
                     wait.until(EC.presence_of_element_located((By.XPATH, click_button_xpath)))
                     try:
+                        print(1111111111)
                         self.driver.find_element_by_xpath(click_button_xpath).click()
+                        page_num += 1
                     except ElementClickInterceptedException:
-                        retry_times = 3  # 重试的次数
-                        while scroll_retry_times < retry_times:
-                            scroll_retry_times += 1
-                            # 将滚动条调整至页面底部
-                            self.driver.execute_script(
-                                'window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
-                            new_height = self.driver.execute_script(js)
+                        # retry_times = 3  # 重试的次数
+                        # while scroll_retry_times < retry_times:
+                        #     scroll_retry_times += 1
+                        #     # 将滚动条调整至页面底部
+                        #     self.driver.execute_script(
+                        #         'window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
+                        #     new_height = self.driver.execute_script(js)
+                        pass
                     except ElementNotInteractableException:
-                        print('不能点 .                   可恶啊')
+                        self.logger.warning('不能点 .                   可恶啊')
                 if new_height > height:
-                    page_num += 1
-                    time.sleep(1)
                     self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
                     time.sleep(1)
                     # 重置初始页面高度
                     height = new_height
                     # 重置初始时间戳，重新计时
                     t1 = int(time.time())
-            elif retry_num < 3:  # 当超过6秒页面高度仍然没有更新时，进入重试逻辑，重试3次，每次等待3 秒
-                time.sleep(3)
-                retry_num = retry_num + 1
             else:  # 超时并超过重试次数，程序结束跳出循环，并认为页面已经加载完毕！
-                print("滚动条已经处于页面最下方！")
+                self.logger.info("滚动条已经处于页面最下方！")
                 # 滚动条调整至页面顶部
                 self.driver.execute_script('window.scrollTo({top: 0,behavior: "smooth"})')
                 return True
@@ -417,8 +434,10 @@ class PowerfulCrawlSpider(Spider):
         @param news_content_html: 新闻内容 文本HTML 元素
         @return: news_content_html(处理完图片src='***'之后的文本HTML) 、standard_img_url_url(图片列表集合)
         """
-        # 本篇新闻的图片集合
-        standard_img_url_url = []
+        # 本篇新闻的图片链接
+        remote_img_url_list = []
+        # 本篇新闻的图片处理之后的文件名称
+        local_img_url_list = []
         # 下载图片
         for img_url in html.xpath('//img/@src'):
             if not img_url:
@@ -440,25 +459,33 @@ class PowerfulCrawlSpider(Spider):
                 # 取图片后缀
                 # 不带图片后缀 默认jpg
                 # http://p9.pstatp.com/large/pgc-image/6f6765ccd6fa4e0195e4b8152dd1fdad
-                if standard_img_url.split('/')[-1] not in '.':
-                    img_postfix = 'jpg'
-                else:
-                    img_postfix = standard_img_url.split('.')[-1]
-                    if img_postfix:
-                        img_postfix_value = re.findall('(.*?)[^a-zA-Z0-9_]', img_postfix)
-                        if img_postfix_value:
-                            img_postfix = img_postfix_value[0]
+                # if '.' not in standard_img_url.split('/')[-1]:
+                #     img_postfix = 'jpg'
+                # else:
+                #     img_postfix = standard_img_url.split('.')[-1]
+                #     if img_postfix:
+                #         img_postfix_value = re.findall('(.*?)[^a-zA-Z0-9_]', img_postfix)
+                #         if img_postfix_value:
+                #             img_postfix = img_postfix_value[0]
 
-                img_full_name = 'newsimg_' + time.strftime("%Y_%m_%d_") + \
-                                str(int(round(time.time() * 1000))) + '.' + img_postfix
                 # 将图片内容转换为 Bytes
                 bytes_img_content = io.BytesIO(img_response.content)
                 # 过滤小于1024 Bytes的图片
                 if len(bytes_img_content.getvalue()) > 1024:
+                    # 获取图片文件格式
+                    try:
+                        img_postfix = Image.open(bytes_img_content).format.lower()
+                    except UnidentifiedImageError:
+                        self.logger.warn('识别图片格式异常 url:' + standard_img_url)
+                        continue
+                    # 图片文件名称
+                    img_full_name = 'newsimg_' + time.strftime("%Y_%m_%d_") + \
+                                    str(int(round(time.time() * 1000))) + '.' + img_postfix
                     # print(standard_img_url)
-                    standard_img_url_url.append(standard_img_url)
+                    remote_img_url_list.append(standard_img_url)
+                    local_img_url_list.append(img_full_name)
                     self.minio.put_object(bucket_name=self.minio_bucket_name, object_name=img_full_name,
-                                          data=bytes_img_content,
+                                          data=io.BytesIO(img_response.content),
                                           length=-1, content_type='image/png', part_size=10 * 1024 * 1024)
                     # 替换HTML中的图片URL地址为  桶名+文件名
                     news_content_html = news_content_html.replace(img_url.replace('&', '&amp;'),
@@ -466,4 +493,4 @@ class PowerfulCrawlSpider(Spider):
             else:
                 print(standard_img_url)
                 print(img_response.status_code)
-        return news_content_html, standard_img_url_url
+        return news_content_html, remote_img_url_list, local_img_url_list

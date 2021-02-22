@@ -16,6 +16,7 @@ class PowerfulCrawlItem(scrapy.Item):
     news_publish_time = scrapy.Field()
     new_content_text = scrapy.Field()
     news_content_html = scrapy.Field()
-    standard_img_url_url = scrapy.Field()
+    remote_img_url = scrapy.Field()
+    local_img_url = scrapy.Field()
     web_url = scrapy.Field()
     insert_time = scrapy.Field()

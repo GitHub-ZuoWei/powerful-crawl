@@ -14,5 +14,4 @@ def powerful_format_date(string_date):
             return ''
     return str(format_date)
 
-
-print(str(powerful_format_date('2021-02-02 14:14:09+08:00')))
+# print(str(powerful_format_date('2021-02-02 14:14:09+08:00')))

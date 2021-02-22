@@ -83,7 +83,7 @@ class MySQLUtils:
             row = cursor.execute(sql)
         else:
             row = cursor.execute(sql, args)
-        # conn.commit()
+        conn.commit()
         self.connect_close(cursor, conn)
         return row
 
