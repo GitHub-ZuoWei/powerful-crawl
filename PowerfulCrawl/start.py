@@ -1,4 +1,4 @@
 from scrapy import cmdline
 
 # cmdline.execute("scrapy crawl powerful_crawl".split())
-cmdline.execute("scrapy crawl powerful_crawl -a task_id=3d41c1aa641e4ecb9d92d93136978ac3".split())
+cmdline.execute("scrapy crawl powerful_crawl -a task_id=90141e0ddc084460a28c7695dfd816d5".split())

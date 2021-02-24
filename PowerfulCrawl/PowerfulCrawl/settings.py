@@ -49,9 +49,9 @@ COOKIES_ENABLED = False
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-# DOWNLOADER_MIDDLEWARES = {
-#     'PowerfulCrawl.middlewares.PowerfulcrawlDownloaderMiddleware': 543,
-# }
+DOWNLOADER_MIDDLEWARES = {
+    'PowerfulCrawl.middlewares.PowerfulcrawlDownloaderMiddleware': 543,
+}
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
@@ -151,6 +151,9 @@ LOG_ENCODING = "UTF-8"
 #     'scrapy_fake_useragent.providers.FixedUserAgentProvider',  # fall back to USER_AGENT value
 # ]
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36'
+
+# ERROR: HTTP status code is not handled or not allowed
+# HTTPERROR_ALLOWED_CODES = [400]
 
 # chrome_driver 路径
 CHROME_DRIVER_PATH = r'D:\SpiderCrawl\PyCharmWorkSpace\PowerfulCrawl\PowerfulCrawl\PowerfulCrawl\driver\chromedriver.exe'

@@ -82,14 +82,17 @@ class PowerfulCrawlSpider(Spider):
         self.request.mount('https://', HTTPAdapter(max_retries=3))  # 增加requests重连次数
         self.request.mount('http://', HTTPAdapter(max_retries=3))  # 增加requests重连次数
         self.request.keep_alive = False  # 关闭多余连接
+        self.request.trust_env = False  # SSL Error
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # 关闭警告信息
-
         # self.option.add_argument('--disable-extensions')
         # self.option.add_argument('--headless')
         # self.option.add_argument('--disable-gpu')
-        # self.option.add_argument('--no-sandbox')
+        self.option.add_argument('--no-sandbox')
         # 去掉提示 Chrome正收到自动测试软件的控制
         self.option.add_argument('disable-infobars')
+        # 忽略 ERROR:ssl_client_socket_impl.cc(962) handshake failed; returned -1, SSL error code 1, net_error -100
+        self.option.add_argument('--ignore-certificate-errors')
+        # self.option.add_argument('--ignore-ssl-errors')
         # 隐身模式启动
         # self.option.add_argument('incognito')
         # 添加代理
@@ -103,6 +106,7 @@ class PowerfulCrawlSpider(Spider):
         # self.option.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
         # 加载去广告插件 ADBLOCK_PLUS
         self.option.add_extension(self.settings.get("ADBLOCK_PLUS_PATH"))
+        # self.option.add_argument("load-extension=D:\\3.10.2_0")
         # self.option.add_extension('C:\\Users\hp\Desktop\chrome-plugin-xpath.crx')
 
         # 随机 UA
@@ -117,18 +121,18 @@ class PowerfulCrawlSpider(Spider):
         # self.display.start()
 
         # 修改页面加载策略
-        desired_capabilities = DesiredCapabilities.CHROME
+        # desired_capabilities = DesiredCapabilities.CHROME
         # 注释这两行会导致最后输出结果的延迟，即等待页面加载完成再输
-        desired_capabilities["pageLoadStrategy"] = "none"
+        # desired_capabilities["pageLoadStrategy"] = "none"
 
         # self.driver = Chrome(options=self.option, executable_path=self.settings.get('CHROME_DRIVER_PATH'))
         self.driver = Chrome(chrome_options=self.option, executable_path=self.settings.get('CHROME_DRIVER_PATH'))
         # 浏览器窗口大小
         # self.driver.set_window_size(width=1920, height=1080)
-        # self.driver.maximize_window()
+        self.driver.maximize_window()
         # 设置模拟浏览器最长等待时间
-        self.driver.set_page_load_timeout(20)
-        self.driver.set_script_timeout(20)
+        self.driver.set_page_load_timeout(60)
+        self.driver.set_script_timeout(60)
         # 跳过检测  chrome88以上这个参数不起作用....
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
@@ -165,6 +169,21 @@ class PowerfulCrawlSpider(Spider):
         spider.logger.info('Display closed: %s', spider.name)
 
     def start_requests(self):
+        # 获取当前窗口句柄（窗口A）
+        handle = self.driver.current_window_handle
+        # 获取当前所有窗口句柄（窗口A、B）
+        handles = self.driver.window_handles
+        # 对窗口进行遍历
+        for new_handle in handles:
+            # 筛选新打开的窗口B
+            if new_handle != handle:
+                # 切换到新打开的窗口B
+                self.driver.switch_to.window(new_handle)
+                # 关闭当前窗口B
+                self.driver.close()
+                # 切换回窗口A
+                self.driver.switch_to.window(handles[0])
+
         # print(self.settings.attributes.keys())
         # 任务开始时插入 collect_task_detail表 任务开始记录
         self.sql_util.insert("INSERT INTO collect_task_detail (id,task_id,start_time,status) "
@@ -272,25 +291,30 @@ class PowerfulCrawlSpider(Spider):
         #                                    publish_time_xpath=news_detail_pubTime_rule, host=self.domain_url,
         #                                    body_xpath=news_detail_content_rule)
 
-        extract_result = extractor.extract(origin_code)
+        extract_result = extractor.extract(html=origin_code, with_body_html=True)
         # 新闻作者
         news_author = extract_result['author']
         # 新闻发布时间   先根据规则自动抽取
         news_publish_time = extract_result['publish_time']
+        # 新闻内容
+        news_content_gne = extract_result['content']
+        # 新闻内容 HTML
+        news_content_html_gne = extract_result['body_html']
+
         if news_publish_time:
             # 2021-01-21 22:47:00+08:00
             news_publish_time = powerful_format_date(news_publish_time).split('+')[0][:19]
-            if not news_publish_time:
-                # 没有匹配到  使用用户自定义的规则
-                try:
-                    # news_publish_time = powerful_format_date(self.driver.find_element_by_xpath(news_detail_pubTime_rule).text)
-                    news_publish_time = current_time()
-                except NoSuchElementException:
-                    # 还没有匹配到  使用系统当前时间  ^_^ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    news_publish_time = current_time()
+        else:
+            # 没有匹配到  使用用户自定义的规则
+            try:
+                # news_publish_time = powerful_format_date(self.driver.find_element_by_xpath(news_detail_pubTime_rule).text)
+                news_publish_time = current_time()
+            except NoSuchElementException:
+                # 还没有匹配到  使用系统当前时间  ^_^ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                news_publish_time = current_time()
+
         # 新闻标题
         # news_title = extract_result['title']
-
         # 新闻标题
         news_title = document.short_title()
         # 新闻详情页HTML
@@ -302,12 +326,17 @@ class PowerfulCrawlSpider(Spider):
         news_content_html, remote_img_url, local_img_url = self.download_news_img(html=html, response=response,
                                                                                   news_content_html=news_content_html)
 
+        # 判断 如果Document识别纯文字长度小于GNE文字长度  或者 没有下载过图片
+        if len(new_content_text) < len(news_content_gne) and not remote_img_url:
+            new_content_text = news_content_gne
+            news_content_html = news_content_html_gne
+
         news_item = PowerfulCrawlItem()
         news_item['task_record_id'] = self.task_record_id
         news_item['task_id'] = self.task_id
         news_item['news_title'] = news_title
         news_item['news_author'] = news_author
-        news_item['news_publish_time'] = str(news_publish_time) if str(news_publish_time) else None
+        news_item['news_publish_time'] = news_publish_time
         news_item['new_content_text'] = new_content_text
         news_item['news_content_html'] = news_content_html
         news_item['remote_img_url'] = remote_img_url
@@ -329,7 +358,8 @@ class PowerfulCrawlSpider(Spider):
         result = extractor.extract(html=origin_code,
                                    feature=news_list_rule,
                                    domain=domain_url)
-        print(len(result))
+        self.logger.info('提取新闻列表页完成,共提取' + str(len(result)) + '个新闻详情页URL')
+        self.logger.info('正在将新闻种子加入队列....')
         for news_url in result:
             yield Request(url=news_url['url'], callback=self.parse)
 
@@ -356,14 +386,15 @@ class PowerfulCrawlSpider(Spider):
                 wait.until(EC.presence_of_element_located((By.XPATH, news_list_next_button)))
             except TimeoutException:
                 continue
-            self.driver.find_element_by_xpath(news_list_next_button).click()
+            click_button_by_xpath(self.driver, news_list_next_button)
+            time.sleep(random.uniform(2, 3))
             result = list_page_extractor(self.driver.page_source, news_list_rule, self.domain_url)
             for news_url in result:
                 # print(news_url['url'])
                 all_news_detail_url.append(news_url['url'])
-        print(len(all_news_detail_url))
-        print(len(set(all_news_detail_url)))
-        for news_detail_url in all_news_detail_url:
+        self.logger.info('提取新闻列表页完成,共提取' + str(len(all_news_detail_url)) + '个URL')
+        self.logger.info('提取新闻列表页完成,去重后共提取' + str(len(set(all_news_detail_url))) + '个URL')
+        for news_detail_url in set(all_news_detail_url):
             yield Request(url=news_detail_url, callback=self.parse)
 
     def scroll_click(self, click_num, click_button_xpath=None, load_type=None):
@@ -382,6 +413,7 @@ class PowerfulCrawlSpider(Spider):
         t1 = int(time.time())
         # 翻页次数
         page_num = 0
+        retry_num = 0
         while True:
             if page_num >= click_num:
                 self.logger.info("page_num: " + str(page_num))
@@ -395,13 +427,17 @@ class PowerfulCrawlSpider(Spider):
                     scroll_retry_times = 0
                     self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
                     # 等待加载更多按钮
-
-                    wait = WebDriverWait(self.driver, 5)
-                    wait.until(EC.presence_of_element_located((By.XPATH, click_button_xpath)))
                     try:
-                        print(1111111111)
-                        self.driver.find_element_by_xpath(click_button_xpath).click()
+                        wait = WebDriverWait(self.driver, 5)
+                        wait.until(EC.presence_of_element_located((By.XPATH, click_button_xpath)))
+                    except TimeoutException:
+                        continue
+                    try:
+                        self.logger.info('手动瀑布流点击' + str(page_num + 1) + '次')
+                        click_button_by_xpath(self.driver, click_button_xpath)
                         page_num += 1
+                        self.logger.info('手动瀑布流点击完成,随机等待2~3秒,等待页面加载.....')
+                        time.sleep(random.uniform(2, 3))
                     except ElementClickInterceptedException:
                         # retry_times = 3  # 重试的次数
                         # while scroll_retry_times < retry_times:
@@ -420,6 +456,9 @@ class PowerfulCrawlSpider(Spider):
                     height = new_height
                     # 重置初始时间戳，重新计时
                     t1 = int(time.time())
+            elif retry_num < 3:  # 当超过6秒页面高度仍然没有更新时，进入重试逻辑，重试3次，每次等待3 秒
+                time.sleep(3)
+                retry_num = retry_num + 1
             else:  # 超时并超过重试次数，程序结束跳出循环，并认为页面已经加载完毕！
                 self.logger.info("滚动条已经处于页面最下方！")
                 # 滚动条调整至页面顶部
@@ -452,7 +491,8 @@ class PowerfulCrawlSpider(Spider):
                 # src="1127063095_16124076686341n.jpg"
                 standard_img_url = '/'.join(response.url.split('/')[:-1]) + '/' + img_url
 
-            img_response = self.request.get(standard_img_url, timeout=10,
+            print(standard_img_url)
+            img_response = self.request.get(standard_img_url, timeout=20,
                                             headers={'user-agent': random.choice(self.settings.get('USER_AGENT_LIST'))},
                                             verify=False)
             if img_response.status_code == 200:
