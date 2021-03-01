@@ -16,5 +16,5 @@ def powerful_format_date(string_date):
             return time.strftime('%Y-%m-%d %H:%M:%S')
     return str(format_date)
 
-# print(str(powerful_format_date('22/2/2021 2:42')))
+# print(str(powerful_format_date('05:24 PM February 25, 2021')))
 # print(str(powerful_format_date('23-2-2021 | 21:20')))

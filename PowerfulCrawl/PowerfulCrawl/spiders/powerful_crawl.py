@@ -241,9 +241,10 @@ class PowerfulCrawlSpider(Spider):
 
         for news_list_rule_item in news_list_rule:
             # 翻页方式 ['':'无翻页']、[auto:'滚动瀑布流']、[manual:'手动瀑布流]、['pagination:'页码翻页']
-            news_list_load_type = news_list_rule_item['listLoadType']
+            news_list_load_type = news_list_rule_item['listLoadType'] if 'listLoadType' in news_list_rule_item else None
             # 翻页按钮
-            news_list_next_button = news_list_rule_item['listNextBtn']
+            news_list_next_button = news_list_rule_item['listNextBtn'] if 'listNextBtn' in news_list_rule_item else None
+
             # 列表页面解析
             if news_list_load_type == 'manual':
                 print('manual')
@@ -262,6 +263,12 @@ class PowerfulCrawlSpider(Spider):
                 # 瀑布流
                 self.scroll_click(click_num=collect_page_num, load_type=news_list_load_type)
                 yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
+            if news_list_load_type == 'auto-manual':
+                print('auto-manual')
+                # 自动瀑布流加手动瀑布流
+                self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
+                                  load_type=news_list_load_type)
+                yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
             if not news_list_load_type:
                 print('none')
                 # 无需翻页
@@ -276,9 +283,12 @@ class PowerfulCrawlSpider(Spider):
         # news_detail_pubTime_rule = self.news_detail_rule['pubTime']
         # news_detail_content_rule = self.news_detail_rule['content']
         # news_detail_source_rule = self.news_detail_rule['source']
-        self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight/2,behavior: "smooth"})')
+
+        # 滚动浏览器至中间位置 PS:解决新闻图片懒加载问题
+        scroll_to_centre(self.driver)
         time.sleep(1)
-        self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
+        # 滚动浏览器至底部 PS:解决新闻图片懒加载问题
+        scroll_to_bottom(self.driver)
         time.sleep(1)
 
         # 获取加载完成的页面源代码
@@ -327,27 +337,27 @@ class PowerfulCrawlSpider(Spider):
                                                                                   news_content_html=news_content_html)
 
         # 判断 如果Document识别纯文字长度小于GNE文字长度  或者 没有下载过图片
-        if len(new_content_text) < len(news_content_gne) and not remote_img_url:
-            new_content_text = news_content_gne
-            news_content_html = news_content_html_gne
+        # if len(new_content_text) + 200 < len(news_content_gne) and not remote_img_url:
+        #     new_content_text = news_content_gne
+        #     news_content_html = news_content_html_gne
 
         news_item = PowerfulCrawlItem()
         news_item['task_record_id'] = self.task_record_id
         news_item['task_id'] = self.task_id
-        news_item['news_title'] = news_title
-        news_item['news_author'] = news_author
-        news_item['news_publish_time'] = news_publish_time
-        news_item['new_content_text'] = new_content_text
-        news_item['news_content_html'] = news_content_html
+        news_item['title'] = news_title
+        news_item['author'] = news_author
+        news_item['pub_time'] = news_publish_time
+        news_item['content'] = new_content_text
+        news_item['content_html'] = news_content_html
         news_item['remote_img_url'] = remote_img_url
         news_item['local_img_url'] = local_img_url
-        news_item['web_url'] = response.url
-        news_item['insert_time'] = current_time()
+        news_item['url'] = response.url
+        news_item['create_time'] = current_time()
         yield news_item
 
     def analysis_list(self, news_list_rule, domain_url):
         """
-        @summary: 解析滚动点击/瀑布流列表
+        @summary: 解析滚动点击/瀑布流列表/列表先瀑布流后滚动点击
         @param news_list_rule:列表规则
         @param domain_url: 网站域名domain
         @return: 回调self.parse 方法
@@ -359,7 +369,7 @@ class PowerfulCrawlSpider(Spider):
                                    feature=news_list_rule,
                                    domain=domain_url)
         self.logger.info('提取新闻列表页完成,共提取' + str(len(result)) + '个新闻详情页URL')
-        self.logger.info('正在将新闻种子加入队列....')
+        self.logger.info('正在将新闻种子加入布隆过滤器....')
         for news_url in result:
             yield Request(url=news_url['url'], callback=self.parse)
 
@@ -375,6 +385,7 @@ class PowerfulCrawlSpider(Spider):
         for click_num in range(collect_page_num):
             # 解析列表第一页
             if click_num == 0:
+                time.sleep(random.uniform(1, 3))
                 result = list_page_extractor(self.driver.page_source, news_list_rule, self.domain_url)
                 for news_url in result:
                     # print(news_url['url'])
@@ -394,21 +405,27 @@ class PowerfulCrawlSpider(Spider):
                 all_news_detail_url.append(news_url['url'])
         self.logger.info('提取新闻列表页完成,共提取' + str(len(all_news_detail_url)) + '个URL')
         self.logger.info('提取新闻列表页完成,去重后共提取' + str(len(set(all_news_detail_url))) + '个URL')
+        self.logger.info('正在将新闻种子加入布隆过滤器....')
         for news_detail_url in set(all_news_detail_url):
-            yield Request(url=news_detail_url, callback=self.parse)
+            # print(news_detail_url)
+            yield Request(url=news_detail_url, meta={
+                'dont_redirect': True,
+                'handle_httpstatus_list': [302]
+            }, callback=self.parse)
 
     def scroll_click(self, click_num, click_button_xpath=None, load_type=None):
         """
-        @summary: 列表滚动点击 / 列表瀑布流
+        @summary: 列表滚动点击 / 列表瀑布流 / 列表先瀑布流后滚动点击
         @param click_num: 点击/滚动次数
         @param click_button_xpath: 点击按钮Xpath规则
         @param load_type: 列表加载方式
         @return: None
         """
         js = "return action=document.body.scrollHeight"
+        time.sleep(random.uniform(1, 3))
         height = self.driver.execute_script(js)
         # 将滚动条调整至页面底部
-        self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
+        scroll_to_bottom(self.driver)
         # 定义初始时间戳（秒）
         t1 = int(time.time())
         # 翻页次数
@@ -416,16 +433,18 @@ class PowerfulCrawlSpider(Spider):
         retry_num = 0
         while True:
             if page_num >= click_num:
-                self.logger.info("page_num: " + str(page_num))
-                return True
+                self.logger.info("当前页: " + str(page_num))
+                return
             # 获取当前时间戳（秒）
             t2 = int(time.time())
             # 判断时间初始时间戳和当前时间戳相差是否大于6秒，小于6秒则下拉滚动条
             if t2 - t1 < 6:
                 new_height = self.driver.execute_script(js)
+
+                # 手动瀑布流
                 if load_type == 'manual':
-                    scroll_retry_times = 0
-                    self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
+                    # 滚动至底部
+                    scroll_to_bottom(self.driver)
                     # 等待加载更多按钮
                     try:
                         wait = WebDriverWait(self.driver, 5)
@@ -435,23 +454,35 @@ class PowerfulCrawlSpider(Spider):
                     try:
                         self.logger.info('手动瀑布流点击' + str(page_num + 1) + '次')
                         click_button_by_xpath(self.driver, click_button_xpath)
-                        page_num += 1
                         self.logger.info('手动瀑布流点击完成,随机等待2~3秒,等待页面加载.....')
                         time.sleep(random.uniform(2, 3))
-                    except ElementClickInterceptedException:
-                        # retry_times = 3  # 重试的次数
-                        # while scroll_retry_times < retry_times:
-                        #     scroll_retry_times += 1
-                        #     # 将滚动条调整至页面底部
-                        #     self.driver.execute_script(
-                        #         'window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
-                        #     new_height = self.driver.execute_script(js)
-                        pass
                     except ElementNotInteractableException:
                         self.logger.warning('不能点 .                   可恶啊')
+
+                # 先自动瀑布流后点击瀑布流
+                if load_type == 'auto-manual':
+                    # 滚动底部3次
+                    for scroll in range(3):
+                        scroll_to_bottom(self.driver)
+                    # 等待加载更多按钮
+                    try:
+                        wait = WebDriverWait(self.driver, 5)
+                        wait.until(EC.presence_of_element_located((By.XPATH, click_button_xpath)))
+                    except TimeoutException:
+                        continue
+                    try:
+                        self.logger.info('自动瀑布流后点击瀑布流,点击' + str(page_num + 1) + '次')
+                        click_button_by_xpath(self.driver, click_button_xpath)
+                        self.logger.info('自动瀑布流后点击瀑布流点击完成,随机等待2~3秒,等待页面加载.....')
+                        time.sleep(random.uniform(2, 3))
+                    except ElementNotInteractableException:
+                        self.logger.warning('不能点 .                   可恶啊')
+
                 if new_height > height:
-                    self.driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
-                    time.sleep(1)
+                    page_num += 1
+                    # 滚动至底部
+                    scroll_to_bottom(self.driver)
+                    time.sleep(random.uniform(2, 3))
                     # 重置初始页面高度
                     height = new_height
                     # 重置初始时间戳，重新计时
@@ -462,8 +493,8 @@ class PowerfulCrawlSpider(Spider):
             else:  # 超时并超过重试次数，程序结束跳出循环，并认为页面已经加载完毕！
                 self.logger.info("滚动条已经处于页面最下方！")
                 # 滚动条调整至页面顶部
-                self.driver.execute_script('window.scrollTo({top: 0,behavior: "smooth"})')
-                return True
+                scroll_to_top(self.driver)
+                return
 
     def download_news_img(self, html, response, news_content_html):
         """

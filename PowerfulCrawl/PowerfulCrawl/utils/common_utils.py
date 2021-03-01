@@ -22,3 +22,18 @@ def list_page_extractor(origin_code, news_list_rule, domain_url):
 # 通过执行前端JS 点击
 def click_button_by_xpath(chrome_driver, click_xpath):
     return chrome_driver.execute_script("document.evaluate('" + click_xpath + "', document).iterateNext().click()")
+
+
+# 滚动浏览器到底部
+def scroll_to_bottom(chrome_driver):
+    return chrome_driver.execute_script('window.scrollTo({top: document.body.scrollHeight,behavior: "smooth"})')
+
+
+# 滚动浏览器到中间
+def scroll_to_centre(chrome_driver):
+    return chrome_driver.execute_script('window.scrollTo({top: document.body.scrollHeight/2,behavior: "smooth"})')
+
+
+# 滚动浏览器到顶部
+def scroll_to_top(chrome_driver):
+    return chrome_driver.execute_script('window.scrollTo({top: 0,behavior: "smooth"})')
