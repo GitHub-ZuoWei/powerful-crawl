@@ -93,7 +93,7 @@ class PowerfulCrawlSpider(Spider):
         # 忽略 ERROR:ssl_client_socket_impl.cc(962) handshake failed; returned -1, SSL error code 1, net_error -100
         self.option.add_argument('--ignore-certificate-errors')
         # self.option.add_argument('--ignore-ssl-errors')
-        # 隐身模式启动
+        # 隐身模式启动  但是无法启用插件了.....
         # self.option.add_argument('incognito')
         # 添加代理
         # self.option.add_argument('--proxy-server=http://{ip}:{port}')
@@ -107,7 +107,6 @@ class PowerfulCrawlSpider(Spider):
         # 加载去广告插件 ADBLOCK_PLUS
         self.option.add_extension(self.settings.get("ADBLOCK_PLUS_PATH"))
         # self.option.add_argument("load-extension=D:\\3.10.2_0")
-        # self.option.add_extension('C:\\Users\hp\Desktop\chrome-plugin-xpath.crx')
 
         # 随机 UA
         self.option.add_argument('user-agent=' + random.choice(self.settings.get('USER_AGENT_LIST')))
@@ -117,12 +116,12 @@ class PowerfulCrawlSpider(Spider):
         # options.add_experimental_option('debuggerAddress', '127.0.0.1:9222')
 
         # 虚拟桌面 Linux
-        # self.display = Display(visible=0, size=(800, 800))
+        # self.display = Display(visible=0, size=(1920, 1080))
         # self.display.start()
 
         # 修改页面加载策略
         # desired_capabilities = DesiredCapabilities.CHROME
-        # 注释这两行会导致最后输出结果的延迟，即等待页面加载完成再输
+        # 注释这两行会导致最后输出结果的延迟，即等待页面加载完成再输出
         # desired_capabilities["pageLoadStrategy"] = "none"
 
         # self.driver = Chrome(options=self.option, executable_path=self.settings.get('CHROME_DRIVER_PATH'))
@@ -148,8 +147,6 @@ class PowerfulCrawlSpider(Spider):
         # 键盘输入
         # ActionChains(self.driver).send_keys(Keys.CONTROL, 'w').perform()
         # ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('w').key_up(Keys.CONTROL).perform()
-        # windows = self.driver.window_handles  # 获取该会话所有的句柄
-        # self.driver.switch_to.window(windows[-1])  # 跳转到最新的句柄
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -173,6 +170,7 @@ class PowerfulCrawlSpider(Spider):
         handle = self.driver.current_window_handle
         # 获取当前所有窗口句柄（窗口A、B）
         handles = self.driver.window_handles
+        # self.driver.switch_to.window(handles[-1])  # 跳转到最新的句柄
         # 对窗口进行遍历
         for new_handle in handles:
             # 筛选新打开的窗口B
@@ -217,62 +215,121 @@ class PowerfulCrawlSpider(Spider):
             self.news_detail_rule = json.loads(self.news_detail_rule['content'])[0]
 
         # 列表页 URL
-        news_list_url = template_detail['address']
+        news_url = template_detail['address']
         # 域名
-        self.domain_url = re.match(r'(\w+)://([^/:]+)(:\d*)?', news_list_url).group()
+        self.domain_url = re.match(r'(\w+)://([^/:]+)(:\d*)?', news_url).group()
         # 新闻列表规则
         news_list_rule = json.loads(template_detail['content'])
         # 请求列表页
-        self.driver.get(news_list_url)
+        try:
+            self.driver.get(news_url)
+        except TimeoutException:
+            self.sql_util.update(
+                'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('2', self.task_record_id))
 
-        # 对配置的列表规则排序  有下一页按钮的放到最后
-        # sort_news_list_rule_item = []
-        # sort_temp_news_list_rule_item = []
-        # all_temp_news_list = []
-        # for temp_news_list_rule_item in news_list_rule:
-        #     temp_news_list_next_button = temp_news_list_rule_item['listNextBtn']
-        #     if not temp_news_list_next_button:
-        #         sort_news_list_rule_item.append(temp_news_list_rule_item)
-        #         all_temp_news_list.append(temp_news_list_rule_item['listFirstData'])
-        #     else:
-        #         sort_temp_news_list_rule_item.append(temp_news_list_rule_item)
-        #         all_temp_news_list.append(temp_news_list_rule_item['listFirstData'])
-        # news_list_rule = sort_news_list_rule_item + sort_temp_news_list_rule_item
+        # 单列表
+        if len(news_list_rule) == 1:
+            for news_list_rule_item in news_list_rule:
+                # 翻页方式 ['':'无翻页']、[auto:'滚动瀑布流']、[manual:'手动瀑布流]、['pagination:'页码翻页']
+                news_list_load_type = news_list_rule_item[
+                    'listLoadType'] if 'listLoadType' in news_list_rule_item else None
+                # 翻页按钮
+                news_list_next_button = news_list_rule_item[
+                    'listNextBtn'] if 'listNextBtn' in news_list_rule_item else None
+                # 列表容器
+                news_list_container = news_list_rule_item[
+                    'listContainer'] if 'listContainer' in news_list_rule_item else None
 
-        for news_list_rule_item in news_list_rule:
-            # 翻页方式 ['':'无翻页']、[auto:'滚动瀑布流']、[manual:'手动瀑布流]、['pagination:'页码翻页']
-            news_list_load_type = news_list_rule_item['listLoadType'] if 'listLoadType' in news_list_rule_item else None
-            # 翻页按钮
-            news_list_next_button = news_list_rule_item['listNextBtn'] if 'listNextBtn' in news_list_rule_item else None
+                # 列表页面解析
+                if news_list_load_type == 'manual':
+                    print('manual')
+                    # 调用滚动点击方法
+                    self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
+                                      load_type=news_list_load_type)
+                    yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                  news_list_container)
+                if news_list_load_type == 'pagination':
+                    # 下一页按钮
+                    print('pagination')
+                    yield from self.analysis_click_next_list(collect_page_num=collect_page_num,
+                                                             news_list_next_button=news_list_next_button,
+                                                             news_list_rule=news_list_rule_item['listFirstData'])
+                if news_list_load_type == 'auto':
+                    print('auto')
+                    # 瀑布流
+                    self.scroll_click(click_num=collect_page_num, load_type=news_list_load_type)
+                    yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                  news_list_container)
+                if news_list_load_type == 'auto-manual':
+                    print('auto-manual')
+                    # 自动瀑布流加手动瀑布流
+                    self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
+                                      load_type=news_list_load_type)
+                    yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                  news_list_container)
+                if not news_list_load_type:
+                    print('none')
+                    # 无需翻页
+                    yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                  news_list_container)
+        # 多列表
+        else:
+            # 无需翻页的多列表新闻URL
+            news_list_url = []
+            for news_list_rule_item in news_list_rule:
+                # 翻页方式 ['':'无翻页']、[auto:'滚动瀑布流']、[manual:'手动瀑布流]、['pagination:'页码翻页']
+                news_list_load_type = news_list_rule_item[
+                    'listLoadType'] if 'listLoadType' in news_list_rule_item else None
+                # 翻页按钮
+                news_list_next_button = news_list_rule_item[
+                    'listNextBtn'] if 'listNextBtn' in news_list_rule_item else None
+                # 列表容器
+                news_list_container = news_list_rule_item[
+                    'listContainer'] if 'listContainer' in news_list_rule_item else None
 
-            # 列表页面解析
-            if news_list_load_type == 'manual':
-                print('manual')
-                # 调用滚动点击方法
-                self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
-                                  load_type=news_list_load_type)
-                yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
-            if news_list_load_type == 'pagination':
-                # 下一页按钮
-                print('pagination')
-                yield from self.analysis_click_next_list(collect_page_num=collect_page_num,
-                                                         news_list_next_button=news_list_next_button,
-                                                         news_list_rule=news_list_rule_item['listFirstData'])
-            if news_list_load_type == 'auto':
-                print('auto')
-                # 瀑布流
-                self.scroll_click(click_num=collect_page_num, load_type=news_list_load_type)
-                yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
-            if news_list_load_type == 'auto-manual':
-                print('auto-manual')
-                # 自动瀑布流加手动瀑布流
-                self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
-                                  load_type=news_list_load_type)
-                yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
-            if not news_list_load_type:
-                print('none')
-                # 无需翻页
-                yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url)
+                if not news_list_load_type or not news_list_next_button:
+                    # 抽取详情页URL
+                    extractor = ListPageExtractor()
+                    result = extractor.extract(html=self.driver.page_source,
+                                               feature=news_list_rule_item['listFirstData'],
+                                               domain=self.domain_url)
+                    for item in result:
+                        news_list_url.append(item['url'])
+
+                else:
+                    # 列表页面解析
+                    if news_list_load_type == 'manual':
+                        print('manual')
+                        # 调用滚动点击方法
+                        self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
+                                          load_type=news_list_load_type)
+                        yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                      news_list_container)
+                    if news_list_load_type == 'pagination':
+                        # 下一页按钮
+                        print('pagination')
+                        yield from self.analysis_click_next_more_list(collect_page_num=collect_page_num,
+                                                                      news_list_next_button=news_list_next_button,
+                                                                      news_list_rule=news_list_rule_item[
+                                                                          'listFirstData'],
+                                                                      all_news_list_rule=news_list_rule)
+                    if news_list_load_type == 'auto':
+                        print('auto')
+                        # 瀑布流
+                        self.scroll_click(click_num=collect_page_num, load_type=news_list_load_type)
+                        yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                      news_list_container)
+                    if news_list_load_type == 'auto-manual':
+                        print('auto-manual')
+                        # 自动瀑布流加手动瀑布流
+                        self.scroll_click(click_num=collect_page_num, click_button_xpath=news_list_next_button,
+                                          load_type=news_list_load_type)
+                        yield from self.analysis_list(news_list_rule_item['listFirstData'], self.domain_url,
+                                                      news_list_container)
+
+            self.logger.info('正在将无需翻页的多列表新闻种子加入布隆过滤器....')
+            for news_url in news_list_url:
+                yield Request(url=news_url, callback=self.parse)
 
     def parse(self, response):
         # 解析详情页
@@ -306,6 +363,8 @@ class PowerfulCrawlSpider(Spider):
         news_author = extract_result['author']
         # 新闻发布时间   先根据规则自动抽取
         news_publish_time = extract_result['publish_time']
+        # 新闻标题
+        news_title_gne = extract_result['title']
         # 新闻内容
         news_content_gne = extract_result['content']
         # 新闻内容 HTML
@@ -332,11 +391,16 @@ class PowerfulCrawlSpider(Spider):
         html = etree.HTML(news_content_html)
         # 新闻详情页文本
         new_content_text = html.xpath('string(.)').strip()
+
+        # 过滤 新闻标题或者新闻内容没有数据
+        if not news_title or not news_content_html or not new_content_text.strip():
+            return
+
         # 下载新闻图片
         news_content_html, remote_img_url, local_img_url = self.download_news_img(html=html, response=response,
                                                                                   news_content_html=news_content_html)
 
-        # 判断 如果Document识别纯文字长度小于GNE文字长度  或者 没有下载过图片
+        # 判断 如果Document识别纯文字长度小于GNE文字长度  并且 没有下载过图片
         # if len(new_content_text) + 200 < len(news_content_gne) and not remote_img_url:
         #     new_content_text = news_content_gne
         #     news_content_html = news_content_html_gne
@@ -355,7 +419,7 @@ class PowerfulCrawlSpider(Spider):
         news_item['create_time'] = current_time()
         yield news_item
 
-    def analysis_list(self, news_list_rule, domain_url):
+    def analysis_list(self, news_list_rule, domain_url, news_list_container):
         """
         @summary: 解析滚动点击/瀑布流列表/列表先瀑布流后滚动点击
         @param news_list_rule:列表规则
@@ -368,6 +432,37 @@ class PowerfulCrawlSpider(Spider):
         result = extractor.extract(html=origin_code,
                                    feature=news_list_rule,
                                    domain=domain_url)
+        # 如果没有提取到列表,莫得办法了^_^
+        if not result:
+            self.logger.info('未提取到新闻URL,尝试使用系统预设规则匹配')
+            extract_list_html = etree.HTML(origin_code)
+            news_list_container_xpath = extract_list_html.xpath(news_list_container)
+            if news_list_container_xpath:
+                news_url_list = []
+                for news_element in news_list_container_xpath[0].xpath('*'):
+                    href = ''.join(news_element.xpath('.//a/@href'))
+                    if href:
+                        if href.startswith('http'):
+                            news_url_list.append(href)
+                        elif href.startswith('//'):
+                            news_url_list.append(domain_url.split('//')[0] + href)
+                        elif href.startswith('/'):
+                            news_url_list.append(domain_url + href)
+                        elif href.startswith('../'):
+                            news_url_list.append(domain_url + href[2:])
+                        else:
+                            news_url_list.append(domain_url + '/' + href)
+
+                self.logger.info('使用系统预设规则匹配完成,共提取' + str(len(set(news_url_list))) + '个新闻详情页URL')
+                self.logger.info('正在将新闻种子加入布隆过滤器....')
+                for news_url in set(news_url_list):
+                    yield Request(url=news_url, callback=self.parse)
+                return
+
+            # 列表模板配置错误或失效
+            self.sql_util.update(
+                'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
+
         self.logger.info('提取新闻列表页完成,共提取' + str(len(result)) + '个新闻详情页URL')
         self.logger.info('正在将新闻种子加入布隆过滤器....')
         for news_url in result:
@@ -403,6 +498,51 @@ class PowerfulCrawlSpider(Spider):
             for news_url in result:
                 # print(news_url['url'])
                 all_news_detail_url.append(news_url['url'])
+        self.logger.info('提取新闻列表页完成,共提取' + str(len(all_news_detail_url)) + '个URL')
+        self.logger.info('提取新闻列表页完成,去重后共提取' + str(len(set(all_news_detail_url))) + '个URL')
+        self.logger.info('正在将新闻种子加入布隆过滤器....')
+        for news_detail_url in set(all_news_detail_url):
+            # print(news_detail_url)
+            yield Request(url=news_detail_url, meta={
+                'dont_redirect': True,
+                'handle_httpstatus_list': [302]
+            }, callback=self.parse)
+
+    def analysis_click_next_more_list(self, collect_page_num, news_list_rule, news_list_next_button,
+                                      all_news_list_rule):
+        """
+        @summary: 解析点击下一页按钮 多列表
+        @param news_list_rule:列表规则
+        @param domain_url: 网站域名domain
+        @return: 回调self.parse 方法
+        """
+        all_news_detail_url = []
+        # 点击下一页按钮
+        for click_num in range(collect_page_num):
+            # 解析列表第一页
+            if click_num == 0:
+                time.sleep(random.uniform(1, 3))
+                result = list_page_extractor(self.driver.page_source, news_list_rule, self.domain_url)
+                for news_url in result:
+                    all_news_detail_url.append(news_url['url'])
+                continue
+            # 解析列表其他项
+            try:
+                wait = WebDriverWait(self.driver, 10)
+                wait.until(EC.presence_of_element_located((By.XPATH, news_list_next_button)))
+            except TimeoutException:
+                continue
+            click_button_by_xpath(self.driver, news_list_next_button)
+            time.sleep(random.uniform(2, 3))
+
+            # 抽取第二页里的所有列表
+            for news_list_rule_item in all_news_list_rule:
+                result = list_page_extractor(self.driver.page_source, news_list_rule_item['listFirstData'],
+                                             self.domain_url)
+                for news_url in result:
+                    # print(news_url['url'])
+                    all_news_detail_url.append(news_url['url'])
+
         self.logger.info('提取新闻列表页完成,共提取' + str(len(all_news_detail_url)) + '个URL')
         self.logger.info('提取新闻列表页完成,去重后共提取' + str(len(set(all_news_detail_url))) + '个URL')
         self.logger.info('正在将新闻种子加入布隆过滤器....')
@@ -458,11 +598,15 @@ class PowerfulCrawlSpider(Spider):
                         time.sleep(random.uniform(2, 3))
                     except ElementNotInteractableException:
                         self.logger.warning('不能点 .                   可恶啊')
+                        # 列表模板配置错误或失效
+                        self.sql_util.update(
+                            'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
 
                 # 先自动瀑布流后点击瀑布流
                 if load_type == 'auto-manual':
-                    # 滚动底部3次
+                    # 滚动到底部3次
                     for scroll in range(3):
+                        time.sleep(1)
                         scroll_to_bottom(self.driver)
                     # 等待加载更多按钮
                     try:
@@ -477,6 +621,9 @@ class PowerfulCrawlSpider(Spider):
                         time.sleep(random.uniform(2, 3))
                     except ElementNotInteractableException:
                         self.logger.warning('不能点 .                   可恶啊')
+                        # 列表模板配置错误或失效
+                        self.sql_util.update(
+                            'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
 
                 if new_height > height:
                     page_num += 1
@@ -506,7 +653,7 @@ class PowerfulCrawlSpider(Spider):
         """
         # 本篇新闻的图片链接
         remote_img_url_list = []
-        # 本篇新闻的图片处理之后的文件名称
+        # 本篇新闻的图片处理之后的本地文件名称
         local_img_url_list = []
         # 下载图片
         for img_url in html.xpath('//img/@src'):
@@ -522,23 +669,10 @@ class PowerfulCrawlSpider(Spider):
                 # src="1127063095_16124076686341n.jpg"
                 standard_img_url = '/'.join(response.url.split('/')[:-1]) + '/' + img_url
 
-            print(standard_img_url)
             img_response = self.request.get(standard_img_url, timeout=20,
                                             headers={'user-agent': random.choice(self.settings.get('USER_AGENT_LIST'))},
                                             verify=False)
             if img_response.status_code == 200:
-                # 取图片后缀
-                # 不带图片后缀 默认jpg
-                # http://p9.pstatp.com/large/pgc-image/6f6765ccd6fa4e0195e4b8152dd1fdad
-                # if '.' not in standard_img_url.split('/')[-1]:
-                #     img_postfix = 'jpg'
-                # else:
-                #     img_postfix = standard_img_url.split('.')[-1]
-                #     if img_postfix:
-                #         img_postfix_value = re.findall('(.*?)[^a-zA-Z0-9_]', img_postfix)
-                #         if img_postfix_value:
-                #             img_postfix = img_postfix_value[0]
-
                 # 将图片内容转换为 Bytes
                 bytes_img_content = io.BytesIO(img_response.content)
                 # 过滤小于1024 Bytes的图片
@@ -558,7 +692,7 @@ class PowerfulCrawlSpider(Spider):
                     self.minio.put_object(bucket_name=self.minio_bucket_name, object_name=img_full_name,
                                           data=io.BytesIO(img_response.content),
                                           length=-1, content_type='image/png', part_size=10 * 1024 * 1024)
-                    # 替换HTML中的图片URL地址为  桶名+文件名
+                    # 替换HTML中的图片URL地址为  桶名 + 文件名
                     news_content_html = news_content_html.replace(img_url.replace('&', '&amp;'),
                                                                   "/" + self.minio_bucket_name + "/" + img_full_name)
             else:
