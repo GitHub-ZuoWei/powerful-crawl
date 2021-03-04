@@ -9,7 +9,6 @@ import scrapy
 
 
 class PowerfulCrawlItem(scrapy.Item):
-    task_record_id = scrapy.Field()
     task_id = scrapy.Field()
     title = scrapy.Field()
     author = scrapy.Field()

@@ -20,10 +20,7 @@ class PowerfulCrawlPipeline(object):
         self.mongo_port = mongo_port
         self.mongo_user = mongo_user
         self.mongo_pwd = mongo_pwd
-        # 插入数据 数量
-        self.insert_number = 0
         self.sql_util = MySQLUtils()
-        self.task_record_id = None
 
     @classmethod
     def from_crawler(cls, crawl):
@@ -51,15 +48,13 @@ class PowerfulCrawlPipeline(object):
         """
         # print(spider.crawler.stats.get_stats())
         # scrapy_crawl_stats = spider.crawler.stats.get_stats()
-        self.sql_util.update('UPDATE `collect_task_detail` SET finish_time="%s",num=%s,status=%s where id="%s"' % (
-            current_time(), self.insert_number, 1, self.task_record_id))
+        # self.sql_util.update('UPDATE `collect_task_detail` SET finish_time="%s",num=%s,status=%s where id="%s"' % (
+        #     current_time(), self.insert_number, 1, self.task_record_id))
+        # print(self.task_record_id)
         self.client.close()
 
     def process_item(self, item, spider):
         if isinstance(spider, PowerfulCrawlSpider):
-            self.task_record_id = item['task_record_id']
-            del item['task_record_id']
             self.mongo_client.insert_one(dict(item))
-            self.insert_number += 1
         else:
             return item

@@ -68,6 +68,8 @@ class PowerfulCrawlSpider(Spider):
         self.task_id = kwargs.get('task_id')
         # 任务记录表ID
         self.task_record_id = generate_uuid()
+        # 记录新闻详情页 插入数据的数量
+        self.insert_number = 0
         # 记录新闻详情页 失败的数量
         self.failed_num = 0
         # 初始化Mysql
@@ -159,6 +161,9 @@ class PowerfulCrawlSpider(Spider):
         return spider
 
     def spider_closed(self, spider):
+        # 采集完成 更新任务执行状态
+        self.sql_util.update('UPDATE `collect_task_detail` SET finish_time="%s",status=%s,num=%s where id="%s"' % (
+            current_time(), 1, self.insert_number, self.task_record_id))
         spider.logger.info('Spider will close: %s', spider.name)
         spider.logger.info('Selenium is closing: %s', spider.name)
         if self.driver:
@@ -416,7 +421,6 @@ class PowerfulCrawlSpider(Spider):
         #     news_content_html = news_content_html_gne
 
         news_item = PowerfulCrawlItem()
-        news_item['task_record_id'] = self.task_record_id
         news_item['task_id'] = self.task_id
         news_item['title'] = news_title
         news_item['author'] = news_author
@@ -427,6 +431,7 @@ class PowerfulCrawlSpider(Spider):
         news_item['local_img_url'] = local_img_url
         news_item['url'] = response.url
         news_item['create_time'] = current_time()
+        self.insert_number += 1
         yield news_item
 
     def analysis_list(self, news_list_rule, domain_url, news_list_container):
