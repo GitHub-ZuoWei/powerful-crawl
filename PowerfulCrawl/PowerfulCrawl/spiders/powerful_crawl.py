@@ -68,6 +68,8 @@ class PowerfulCrawlSpider(Spider):
         self.task_id = kwargs.get('task_id')
         # 任务记录表ID
         self.task_record_id = generate_uuid()
+        # 记录新闻详情页 失败的数量
+        self.failed_num = 0
         # 初始化Mysql
         self.sql_util = MySQLUtils()
         # 初始化 Minio
@@ -104,6 +106,8 @@ class PowerfulCrawlSpider(Spider):
 
         # 不加载图片
         # self.option.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+        # 禁用Cookies
+        self.option.add_experimental_option("prefs", {"profile.default_content_settings.cookies": 2})
         # 加载去广告插件 ADBLOCK_PLUS
         self.option.add_extension(self.settings.get("ADBLOCK_PLUS_PATH"))
         # self.option.add_argument("load-extension=D:\\3.10.2_0")
@@ -225,7 +229,8 @@ class PowerfulCrawlSpider(Spider):
             self.driver.get(news_url)
         except TimeoutException:
             self.sql_util.update(
-                'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('2', self.task_record_id))
+                'UPDATE `collect_task_detail` SET error="%s",status = "%s" where id="%s"' % (
+                    '2', '2', self.task_record_id))
 
         # 单列表
         if len(news_list_rule) == 1:
@@ -333,7 +338,10 @@ class PowerfulCrawlSpider(Spider):
 
     def parse(self, response):
         # 解析详情页
-        self.driver.get(response.url)
+        try:
+            self.driver.get(response.url)
+        except TimeoutException:
+            self.failed_num += 1
         # 用户自定义规则
         # news_detail_title_rule = self.news_detail_rule['title']
         # news_detail_author_rule = self.news_detail_rule['author']
@@ -394,6 +402,8 @@ class PowerfulCrawlSpider(Spider):
 
         # 过滤 新闻标题或者新闻内容没有数据
         if not news_title or not news_content_html or not new_content_text.strip():
+            # 解析失败数量加1
+            self.failed_num += 1
             return
 
         # 下载新闻图片
@@ -461,7 +471,8 @@ class PowerfulCrawlSpider(Spider):
 
             # 列表模板配置错误或失效
             self.sql_util.update(
-                'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
+                'UPDATE `collect_task_detail` SET error="%s",status = "%s" where id="%s"' % (
+                    '1', '2', self.task_record_id))
 
         self.logger.info('提取新闻列表页完成,共提取' + str(len(result)) + '个新闻详情页URL')
         self.logger.info('正在将新闻种子加入布隆过滤器....')
@@ -600,7 +611,8 @@ class PowerfulCrawlSpider(Spider):
                         self.logger.warning('不能点 .                   可恶啊')
                         # 列表模板配置错误或失效
                         self.sql_util.update(
-                            'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
+                            'UPDATE `collect_task_detail` SET error="%s",status = "%s" where id="%s"' % (
+                                '1', '2', self.task_record_id))
 
                 # 先自动瀑布流后点击瀑布流
                 if load_type == 'auto-manual':
@@ -623,7 +635,8 @@ class PowerfulCrawlSpider(Spider):
                         self.logger.warning('不能点 .                   可恶啊')
                         # 列表模板配置错误或失效
                         self.sql_util.update(
-                            'UPDATE `collect_task_detail` SET error="%s" where id="%s"' % ('1', self.task_record_id))
+                            'UPDATE `collect_task_detail` SET error="%s",status = "%s" where id="%s"' % (
+                                '1', '2', self.task_record_id))
 
                 if new_height > height:
                     page_num += 1
