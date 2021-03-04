@@ -162,8 +162,10 @@ class PowerfulCrawlSpider(Spider):
 
     def spider_closed(self, spider):
         # 采集完成 更新任务执行状态
-        self.sql_util.update('UPDATE `collect_task_detail` SET finish_time="%s",status=%s,num=%s where id="%s"' % (
-            current_time(), 1, self.insert_number, self.task_record_id))
+        self.sql_util.update('UPDATE `collect_task_detail` '
+                             'SET finish_time="%s",status=%s,num=%s,failed_num=%s '
+                             'where id="%s"'
+                             % (current_time(), 1, self.insert_number, self.failed_num, self.task_record_id))
         spider.logger.info('Spider will close: %s', spider.name)
         spider.logger.info('Selenium is closing: %s', spider.name)
         if self.driver:
