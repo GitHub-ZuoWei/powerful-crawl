@@ -181,17 +181,17 @@ LOG_ENCODING = "UTF-8"
 
 # 布隆过滤器
 # Ensure use this Scheduler
-# SCHEDULER = "scrapy_redis_bloomfilter.scheduler.Scheduler"
-# # Ensure all spiders share same duplicates filter through redis
-# DUPEFILTER_CLASS = "scrapy_redis_bloomfilter.dupefilter.RFPDupeFilter"
-# # Redis URL
-# REDIS_URL = 'redis://192.168.12.100:6379'
-# # Number of Hash Functions to use, defaults to 6
-# BLOOMFILTER_HASH_NUMBER = 6
-# # Redis Memory Bit of Bloom Filter Usage, 30 means 2^30 = 128MB, defaults to 30
-# BLOOMFILTER_BIT = 30
-# # Persist
-# SCHEDULER_PERSIST = True
+SCHEDULER = "scrapy_redis_bloomfilter.scheduler.Scheduler"
+# Ensure all spiders share same duplicates filter through redis
+DUPEFILTER_CLASS = "scrapy_redis_bloomfilter.dupefilter.RFPDupeFilter"
+# Redis URL
+REDIS_URL = 'redis://192.168.12.100:6379'
+# Number of Hash Functions to use, defaults to 6
+BLOOMFILTER_HASH_NUMBER = 6
+# Redis Memory Bit of Bloom Filter Usage, 30 means 2^30 = 128MB, defaults to 30
+BLOOMFILTER_BIT = 30
+# Persist
+SCHEDULER_PERSIST = True
 
 # Selenium 可以不使用以下方式
 # FAKEUSERAGENT_PROVIDERS = [
