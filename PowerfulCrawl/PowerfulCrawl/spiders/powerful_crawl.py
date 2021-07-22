@@ -713,8 +713,7 @@ class PowerfulCrawlSpider(Spider):
                                           data=io.BytesIO(img_response.content),
                                           length=-1, content_type='image/png', part_size=10 * 1024 * 1024)
                     # 替换HTML中的图片URL地址为  桶名 + 文件名
-                    news_content_html = news_content_html.replace(img_url.replace('&', '&amp;'),
-                                                                  "/" + self.minio_bucket_name + "/" + img_full_name)
+                    news_content_html = news_content_html.replace(img_url.replace('&', '&amp;'), "/" + self.minio_bucket_name + "/" + img_full_name)
             else:
                 print(standard_img_url)
                 print(img_response.status_code)

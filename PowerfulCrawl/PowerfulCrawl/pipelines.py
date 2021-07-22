@@ -20,7 +20,7 @@ class PowerfulCrawlPipeline(object):
         self.mongo_port = mongo_port
         self.mongo_user = mongo_user
         self.mongo_pwd = mongo_pwd
-        self.sql_util = MySQLUtils()
+        # self.sql_util = MySQLUtils()
 
     @classmethod
     def from_crawler(cls, crawl):

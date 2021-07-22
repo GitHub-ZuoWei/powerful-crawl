@@ -175,7 +175,7 @@ USER_AGENT_LIST = [
 # LOG_LEVEL = 'DEBUG'
 LOG_LEVEL = 'INFO'
 to_day = datetime.datetime.now()
-# LOG_FILE = 'PowerfulCrawl/log/scrapy_{}_{}_{}.log'.format(to_day.year, to_day.month, to_day.day)
+LOG_FILE = 'PowerfulCrawl/log/scrapy_{}_{}_{}.log'.format(to_day.year, to_day.month, to_day.day)
 LOG_ENCODING = "UTF-8"
 # LOG_ENABLED = False
 
@@ -202,7 +202,7 @@ SCHEDULER_PERSIST = True
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36'
 
 # ERROR: HTTP status code is not handled or not allowed
-HTTPERROR_ALLOWED_CODES = [301, 301]
+HTTPERROR_ALLOWED_CODES = [301, 302]
 
 # chrome_driver 路径
 CHROME_DRIVER_PATH = r'D:\SpiderCrawl\PyCharmWorkSpace\PowerfulCrawl\PowerfulCrawl\PowerfulCrawl\driver\chromedriver.exe'
